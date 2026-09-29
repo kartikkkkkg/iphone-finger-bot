@@ -156,16 +156,16 @@ def format_delayed_report(bench, delays, label):
         L.append(f"{s['total_runtime_s']:.3f} seconds")
         L.append("")
     L.append("Average delay after detection:")
-    L.append(f"{total_delay_ms / n:.1f} ms")
+    L.append(f"{total_delay_ms / n:.6f} ms")
     L.append("")
     L.append("Minimum generated delay:")
-    L.append(f"{min(delays):.1f} ms")
+    L.append(f"{min(delays):.6f} ms")
     L.append("")
     L.append("Maximum generated delay:")
-    L.append(f"{max(delays):.1f} ms")
+    L.append(f"{max(delays):.6f} ms")
     L.append("")
     L.append("Total intentional delay:")
-    L.append(f"{total_delay_ms / 1000.0:.3f} seconds")
+    L.append(f"{total_delay_ms / 1000.0:.6f} seconds")
     L.append("")
     L.append("Average detection time:")
     L.append(f"{s['avg_detect_ms']:.2f} ms")
@@ -290,7 +290,7 @@ def run_delayed(cfg, min_delay_ms=DEFAULT_MIN_DELAY_MS,
                 bench.add_tap(TapRecord(tap_count, t_cap, t_det0, t_det1,
                                         t_click, t_click_done))
                 print(f"Tap {tap_count} -> Button {target} "
-                      f"(delay {delay_ms:.0f} ms)")
+                      f"(delay {delay_ms:.6f} ms)")
 
             if debug:
                 bot_impl._draw_debug(frame, cfg, scores, target, tap_count,

@@ -269,13 +269,32 @@ class TestShutdownAndStats(unittest.TestCase):
         for needle in ("ENDLESS DELAYED BOT STOPPED",
                        "Total taps:\n4",
                        "Total runtime:",
-                       "Average delay after detection:\n172.2 ms",
-                       "Minimum generated delay:\n151.0 ms",
-                       "Maximum generated delay:\n194.0 ms",
-                       "Total intentional delay:\n0.689 seconds",
+                       "Average delay after detection:\n172.250000 ms",
+                       "Minimum generated delay:\n151.000000 ms",
+                       "Maximum generated delay:\n194.000000 ms",
+                       "Total intentional delay:\n0.689000 seconds",
                        "Average detection time:",
                        "Total detection + click processing:"):
             self.assertIn(needle, report)
+
+    def test_tap_line_shows_six_decimal_delay(self):
+        script, _ = rapid_script(2)
+        with patch.object(bot_delayed.random, "uniform",
+                          side_effect=[190.482731, 159.173624]):
+            _, _, out = run_game(script, budget=400)
+        self.assertIn("Tap 1 -> Button 1 (delay 190.482731 ms)", out)
+        self.assertIn("Tap 2 -> Button 2 (delay 159.173624 ms)", out)
+
+    def test_report_six_decimal_precision(self):
+        # Fractional delays keep full 6-decimal precision, no truncation.
+        delays = [163.123456, 194.654321]
+        report = bot_delayed.format_delayed_report(self.make_bench(2),
+                                                   delays, "150\u2013200 ms")
+        self.assertIn("Average delay after detection:\n178.888889 ms",
+                      report)
+        self.assertIn("Minimum generated delay:\n163.123456 ms", report)
+        self.assertIn("Maximum generated delay:\n194.654321 ms", report)
+        self.assertIn("Total intentional delay:\n0.357778 seconds", report)
 
     def test_performance_logging(self):
         script, _ = rapid_script(3)
