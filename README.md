@@ -151,10 +151,46 @@ Debug mode adds a live diagnostics window:
 python bot.py --debug
 ```
 
-## Safety: exactly 10 clicks
+## Endless mode
+
+```bash
+python bot.py --endless
+```
+
+Same loop as live mode — capture → detect → click with the identical
+re-arm guard — but **no 10-tap cap**: it keeps playing until you stop it
+with Ctrl+C (or ESC). On interrupt it exits cleanly and prints a session
+summary:
+
+```
+================================
+ENDLESS MODE STOPPED
+================================
+
+Total taps: 47
+Total runtime: 83.412 seconds (loop start -> stop, includes idle waiting)
+Average interval: 1781.2 ms
+Minimum interval: 1654.0 ms
+Maximum interval: 1922.7 ms
+Average detection time: 0.42 ms
+Fastest detection-to-click: 0.18 ms
+Total detection + click processing: 24.31 ms (detect 19.74 ms + dispatch 4.57 ms)
+
+================================
+Endless mode stopped after 47 taps. No further clicks will be sent.
+```
+
+`--perf-log` works in endless mode too (`python bot.py --endless --perf-log
+performance.log`); the log header is the endless report above, followed by
+the per-tap CSV (now including `t_click_done_ns`, `detect_to_click_ms`,
+`click_dispatch_ms` columns).
+
+## Safety: exactly 10 clicks (default mode)
 
 - A hard `tap_count < 10` gate wraps **every** click dispatch, plus a
-  `break` the moment the 10th tap lands.
+  `break` the moment the 10th tap lands. `--endless` is the only mode that
+  bypasses this cap, and only because the user explicitly asked for it on
+  the command line.
 - A re-arm state machine prevents double-tapping one round: after clicking
   button B, the bot cannot click again until B stops being orange (round
   advanced) or a *different* target appears.

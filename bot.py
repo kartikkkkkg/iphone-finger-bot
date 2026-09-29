@@ -3,6 +3,7 @@
 
 Usage:
     python bot.py                 # LIVE MODE: play 10 taps, then stop
+    python bot.py --endless       # ENDLESS MODE: play until Ctrl+C
     python bot.py --debug         # live mode + diagnostics window
     python bot.py --test          # detection test, NEVER clicks
     python bot.py --calibrate     # interactive calibration -> config.json
@@ -11,7 +12,8 @@ Usage:
     python bot.py --perf-log PATH # write performance.log after the game
 
 Live loop (no sleeps, no per-frame logging, no disk writes):
-    CAPTURE -> DETECT -> CLICK -> repeat, max 10 clicks, then STOP.
+    CAPTURE -> DETECT -> CLICK -> repeat, max 10 clicks, then STOP
+    (--endless: repeat until Ctrl+C instead).
 
 Safety:
     - Hard tap counter: no click is ever sent when tap_count >= 10.
@@ -85,8 +87,10 @@ def start_esc_watcher(stop_event):
 # ---------------------------------------------------------------------------
 
 def run_live(cfg, debug=False, perf_log_path=None, backend="quartz",
-             frame_budget=None):
-    """frame_budget: test hook only — max loop iterations before stopping."""
+             frame_budget=None, endless=False):
+    """frame_budget: test hook only — max loop iterations before stopping.
+    endless: no 10-tap cap; run until Ctrl+C/ESC. Default mode is unchanged.
+    """
     import capture
     import clicker
 
@@ -117,14 +121,19 @@ def run_live(cfg, debug=False, perf_log_path=None, backend="quartz",
     last_clicked = None   # button clicked most recently (re-arm guard)
 
     print("GAME STARTED - waiting for the first orange target...")
-    print("(ESC or Ctrl+C stops immediately. Bot stops itself after 10 taps.)")
+    if endless:
+        print("ENDLESS MODE: no tap limit. Ctrl+C (or ESC) stops the bot.")
+    else:
+        print("(ESC or Ctrl+C stops immediately. Bot stops itself after "
+              "10 taps.)")
 
     if debug:
         import cv2
         cv2.namedWindow("finger-bot debug", cv2.WINDOW_NORMAL)
 
+    bench.mark_run_start(now_ns())
     try:
-        while tap_count < TOTAL_TAPS and not stop_event.is_set():
+        while (endless or tap_count < TOTAL_TAPS) and not stop_event.is_set():
             if frame_budget is not None:
                 if frame_budget <= 0:
                     break
@@ -150,21 +159,26 @@ def run_live(cfg, debug=False, perf_log_path=None, backend="quartz",
                     armed = True
 
             if armed and target is not None:
-                # HARD SAFETY GATE: never click once 10 taps are done.
-                if tap_count >= TOTAL_TAPS:
+                # HARD SAFETY GATE (default mode): never click once 10 taps
+                # are done. Endless mode intentionally has no cap.
+                if not endless and tap_count >= TOTAL_TAPS:
                     break
                 t_click = now_ns()
                 clicker.click_button(target, click_points)
+                t_click_done = now_ns()
                 tap_count += 1
                 last_clicked = target
                 armed = False
                 bench.add_tap(TapRecord(tap_count, t_cap, t_det0, t_det1,
-                                        t_click))
-                print(f"Tap {tap_count}/{TOTAL_TAPS} -> Button {target}")
+                                        t_click, t_click_done))
+                if endless:
+                    print(f"Tap {tap_count} -> Button {target}")
+                else:
+                    print(f"Tap {tap_count}/{TOTAL_TAPS} -> Button {target}")
 
             if debug:
                 _draw_debug(frame, cfg, scores, target, tap_count,
-                            (t_det1 - t_det0) / 1e6)
+                            (t_det1 - t_det0) / 1e6, endless=endless)
                 import cv2
                 cv2.imshow("finger-bot debug", frame)
                 if cv2.waitKey(1) & 0xFF in (27, ord("q")):
@@ -175,20 +189,31 @@ def run_live(cfg, debug=False, perf_log_path=None, backend="quartz",
         if debug:
             import cv2
             cv2.destroyAllWindows()
+    bench.mark_run_end(now_ns())
 
     # --- Post-game: report + optional log. Nothing was written during play. ---
     print()
-    print(bench.format_report())
-    if perf_log_path:
-        path = bench.write_log(perf_log_path)
-        print(f"Performance log written to {path}")
-    if stop_event.is_set() and tap_count < TOTAL_TAPS:
-        print(f"Stopped early after {tap_count} taps (emergency stop).")
-    print("Bot stopped. No further clicks will be sent.")
+    if endless:
+        print(bench.format_endless_report())
+        if perf_log_path:
+            path = bench.write_log(perf_log_path,
+                                   report=bench.format_endless_report())
+            print(f"Performance log written to {path}")
+        print(f"Endless mode stopped after {tap_count} taps. "
+              "No further clicks will be sent.")
+    else:
+        print(bench.format_report())
+        if perf_log_path:
+            path = bench.write_log(perf_log_path)
+            print(f"Performance log written to {path}")
+        if stop_event.is_set() and tap_count < TOTAL_TAPS:
+            print(f"Stopped early after {tap_count} taps (emergency stop).")
+        print("Bot stopped. No further clicks will be sent.")
     return 0
 
 
-def _draw_debug(frame, cfg, scores, target, tap_count, detect_ms):
+def _draw_debug(frame, cfg, scores, target, tap_count, detect_ms,
+                endless=False):
     import cv2
     roi = cfg["roi_size"]
     for i in range(1, 7):
@@ -203,7 +228,9 @@ def _draw_debug(frame, cfg, scores, target, tap_count, detect_ms):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         cv2.putText(frame, f"{scores[i - 1]:.2f}", (x0, y1 + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    cv2.putText(frame, f"Tap {tap_count}/{TOTAL_TAPS}  detect {detect_ms:.2f} ms",
+    tap_label = f"Tap {tap_count} (endless)" if endless \
+        else f"Tap {tap_count}/{TOTAL_TAPS}"
+    cv2.putText(frame, f"{tap_label}  detect {detect_ms:.2f} ms",
                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
 
@@ -261,7 +288,7 @@ def run_test(cfg, backend="quartz"):
 # CLI
 # ---------------------------------------------------------------------------
 
-def main(argv=None):
+def build_parser():
     ap = argparse.ArgumentParser(
         description="iphone-finger-bot: tap the orange button, 10 rounds, "
                     "as fast as macOS allows.")
@@ -271,6 +298,8 @@ def main(argv=None):
                     help="detection test with debug UI; NEVER clicks")
     ap.add_argument("--debug", action="store_true",
                     help="live mode with diagnostics window")
+    ap.add_argument("--endless", action="store_true",
+                    help="no 10-tap limit: keep playing until Ctrl+C/ESC")
     ap.add_argument("--verify-coords", action="store_true",
                     help="move cursor over each button (no clicks)")
     ap.add_argument("--list-windows", action="store_true",
@@ -285,7 +314,11 @@ def main(argv=None):
     ap.add_argument("--backend", default="quartz",
                     choices=["quartz", "mss", "synthetic"],
                     help="capture backend (synthetic = testing only)")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
 
     if args.list_windows:
         import capture
@@ -338,7 +371,7 @@ def main(argv=None):
               "not live mode.")
         return 1
     return run_live(cfg, debug=args.debug, perf_log_path=args.perf_log,
-                    backend=args.backend)
+                    backend=args.backend, endless=args.endless)
 
 
 if __name__ == "__main__":
