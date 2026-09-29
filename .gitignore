@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+config.json
+performance.log
+*.log
+samples/*.png
+samples/*.jpg
+!samples/README.md

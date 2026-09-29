@@ -1,0 +1,10 @@
+# --- Core (platform-independent) ---
+numpy>=1.26
+opencv-python-headless>=4.9.0
+
+# --- macOS native capture + input (Quartz / CoreGraphics via PyObjC) ---
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+
+# --- Fallback capture backend (region grab via mss, macOS only) ---
+mss>=9.0.1; sys_platform == "darwin"
