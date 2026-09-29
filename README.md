@@ -195,6 +195,48 @@ How the timing works:
   and the actual first-click → tenth-click duration. Endless mode prints
   the same statistics on Ctrl+C.
 
+## Unified Bot (recommended)
+
+`bot_unified.py` combines `bot.py` and `bot_timed.py` into one script —
+the same capture, detector, ROI calibration, native clicks, and re-arm
+protection, with two independent choices: **tap mode** and **minimum
+click interval**. The older scripts remain untouched for backward
+compatibility.
+
+```bash
+# Default: 10 taps, 275 ms minimum interval
+python bot_unified.py
+
+# 25 taps
+python bot_unified.py --taps 25
+
+# Endless mode
+python bot_unified.py --endless
+
+# 10 taps with 300 ms minimum interval
+python bot_unified.py --min-interval 300
+
+# 10 taps with no artificial timing floor
+python bot_unified.py --min-interval 0
+
+# Endless with 300 ms minimum interval
+python bot_unified.py --endless --min-interval 300
+
+# Performance logging
+python bot_unified.py --perf-log performance.log
+```
+
+- Tap mode: default 10 taps (same hard safety limit as `bot.py`),
+  `--taps N` for any positive count, `--endless` until Ctrl+C.
+  `--taps` and `--endless` are mutually exclusive.
+- Minimum interval: default 275 ms (9 intervals × 275 ms = 2475 ms from
+  click #1 to click #10), measured from the actual previous click
+  dispatch via `time.perf_counter_ns()`. Detection and capture always
+  run at full speed; when the game is slower than the interval, clicks
+  fire immediately with zero added delay.
+- `--debug`, `--test`, `--verify-coords`, `--calibrate`,
+  `--list-windows`, and `--save-capture` work as in `bot.py`.
+
 ## Endless mode
 
 ```bash
