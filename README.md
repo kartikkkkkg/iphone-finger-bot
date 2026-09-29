@@ -290,6 +290,34 @@ menu entirely. Diagnostic commands (`--test`, `--verify-coords`,
 exits cleanly; invalid input is rejected with an error and asked again —
 nothing is ever chosen silently.
 
+## Delayed Bot (endless, random post-detection delay)
+
+`bot_delayed.py` is an ENDLESS delayed-click bot. It has **no tap-count
+mode** and no `--taps` option — it runs until Ctrl+C. Its only gameplay
+parameter is a random delay applied **after** a valid orange target is
+detected and **before** the click:
+
+```
+detect orange → random delay → click → repeat indefinitely
+```
+
+```bash
+python bot_delayed.py
+```
+
+```bash
+# Performance logging
+python bot_delayed.py --perf-log delayed.log
+```
+
+The startup menu offers delay ranges (default **150–200 ms**), a custom
+range, or no delay. A fresh random delay is generated independently for
+every click and always stays inside the configured range. Detection runs
+at full speed; the wait happens strictly between detection and the click
+dispatch — this is not a click-to-click interval. `--debug`, `--test`,
+`--verify-coords`, `--calibrate`, `--list-windows`, and `--save-capture`
+work as in `bot.py`; diagnostic commands never start the bot.
+
 ## Endless mode
 
 ```bash
