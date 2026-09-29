@@ -151,6 +151,50 @@ Debug mode adds a live diagnostics window:
 python bot.py --debug
 ```
 
+## Timed mode (minimum 275 ms tap cadence)
+
+`bot_timed.py` is a standalone variant of `bot.py` (which it leaves
+completely untouched). It runs the identical capture → detect → click
+pipeline with the identical detector, ROI calibration, native clicks,
+and re-arm protection — but enforces a **minimum 275 ms interval between
+successive clicks**, so 10 taps can never complete in ~2 seconds or less
+(9 intervals × 275 ms = 2.475 s, a comfortable margin above 2 s).
+
+Normal (10 taps, then stop):
+
+```bash
+python bot_timed.py
+```
+
+Endless (no tap limit, until Ctrl+C — same 275 ms cadence):
+
+```bash
+python bot_timed.py --endless
+```
+
+Performance logging (same mechanism as `bot.py --perf-log`):
+
+```bash
+python bot_timed.py --perf-log performance.log
+```
+
+How the timing works:
+
+- Capture and HSV detection always run at full speed — the cadence adds
+  **zero** delay to capture, detection, or click dispatch.
+- When a target is valid and the bot is re-armed, it checks the time
+  since the **actual previous click dispatch timestamp**
+  (`time.perf_counter_ns()`, monotonic, high resolution).
+- If less than 275 ms has passed, it sleeps only the remaining time
+  (no busy-waiting), then re-checks before clicking. If the game is
+  slower than 275 ms, nothing extra is added — the click fires
+  immediately.
+- At the end of a 10-tap run it reports: total taps, total runtime,
+  average/minimum/maximum interval, average detection time, total
+  detection + click processing time, **total enforced timing wait**,
+  and the actual first-click → tenth-click duration. Endless mode prints
+  the same statistics on Ctrl+C.
+
 ## Endless mode
 
 ```bash
