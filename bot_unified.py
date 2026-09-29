@@ -18,6 +18,10 @@ Timing model (identical to bot_timed.py):
     since the actual previous click dispatch (perf_counter_ns) -> sleep
     only the remaining time if below the floor -> re-check -> click.
 The first click never waits. Capture and detection are never slowed.
+
+Run with no mode/timing flags for an interactive startup menu (mode,
+tap count, interval presets, confirmation screen). Explicit --taps /
+--endless / --min-interval flags bypass the menu.
 """
 
 import argparse
@@ -62,12 +66,14 @@ def build_parser():
     ap.add_argument("--endless", action="store_true",
                     help="no tap limit: keep playing until Ctrl+C/ESC. "
                          "Mutually exclusive with --taps.")
-    ap.add_argument("--min-interval", type=float, default=DEFAULT_MIN_INTERVAL_MS,
+    ap.add_argument("--min-interval", type=float, default=None,
                     metavar="MS",
                     help="minimum click-to-click interval in milliseconds, "
                          "measured from the previous click dispatch "
                          f"(default: {DEFAULT_MIN_INTERVAL_MS}). "
-                         "0 disables artificial timing enforcement.")
+                         "0 disables artificial timing enforcement. "
+                         "When omitted (with no --taps/--endless), an "
+                         "interactive menu asks instead.")
     ap.add_argument("--perf-log", metavar="PATH", default=None,
                     help="write performance.log after the run")
     ap.add_argument("--debug", action="store_true",
@@ -98,7 +104,7 @@ def resolve_mode(args, parser):
     """
     if args.endless and args.taps is not None:
         parser.error("--endless and --taps are mutually exclusive")
-    if args.min_interval < 0:
+    if args.min_interval is not None and args.min_interval < 0:
         parser.error("--min-interval must be >= 0")
     if args.endless:
         return ("ENDLESS", None, True)
@@ -107,6 +113,147 @@ def resolve_mode(args, parser):
             parser.error("--taps must be a positive integer")
         return (f"{args.taps} taps", args.taps, False)
     return (f"{DEFAULT_TAPS} taps", DEFAULT_TAPS, False)
+
+
+def effective_min_interval_ms(args):
+    """The minimum interval to use: explicit flag, else the default."""
+    return DEFAULT_MIN_INTERVAL_MS \
+        if args.min_interval is None else args.min_interval
+
+
+def mode_flags_explicit(args):
+    """True when the user gave any mode/timing CLI flag, which means the
+    interactive menu is bypassed."""
+    return args.taps is not None or args.endless or args.min_interval is not None
+
+
+# ---------------------------------------------------------------------------
+# Interactive startup menu (only when no mode/timing flags were given)
+# ---------------------------------------------------------------------------
+
+INTERVAL_PRESETS = [
+    ("275 ms (recommended)", 275.0),
+    ("300 ms", 300.0),
+    ("350 ms", 350.0),
+    ("500 ms", 500.0),
+    ("Custom", None),          # asks for a custom value
+    ("No timing limit", 0.0),
+]
+
+
+def _ask_option(prompt, valid, default):
+    """Prompt until the user picks one of `valid` (or Enter for default).
+
+    Ctrl+C / Ctrl+D propagate to the caller, which exits cleanly.
+    """
+    valid = set(valid)
+    while True:
+        raw = input(prompt).strip()
+        if raw == "":
+            return default
+        if raw in valid:
+            return raw
+        print(f"Invalid input: please enter one of "
+              f"{', '.join(sorted(valid))}.")
+
+
+def _ask_positive_int(prompt, default):
+    while True:
+        raw = input(prompt).strip()
+        if raw == "":
+            return default
+        try:
+            val = int(raw)
+        except ValueError:
+            print("Invalid input: please enter a positive integer.")
+            continue
+        if val < 1:
+            print("Invalid input: please enter a positive integer.")
+            continue
+        return val
+
+
+def _ask_non_negative_float(prompt, default):
+    while True:
+        raw = input(prompt).strip()
+        if raw == "":
+            return default
+        try:
+            val = float(raw)
+        except ValueError:
+            print("Invalid input: please enter a non-negative number.")
+            continue
+        if val < 0:
+            print("Invalid input: please enter a non-negative number.")
+            continue
+        return val
+
+
+def _ask_yes_no(prompt, default=True):
+    while True:
+        raw = input(prompt).strip().lower()
+        if raw == "":
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("Invalid input: please enter Y or n.")
+
+
+def run_interactive_menu():
+    """Interactive startup menu.
+
+    Returns (mode_label, tap_limit, endless, min_interval_ms), or None when
+    the user declines at the confirmation screen. Ctrl+C / Ctrl+D at any
+    prompt propagate to the caller for a clean exit.
+    """
+    print("========================================")
+    print("       iPhone Orange Button Bot")
+    print("========================================")
+    print()
+    print("How do you want to run?")
+    print()
+    print("1. Limited taps")
+    print("2. Endless mode")
+    print()
+    if _ask_option("Select mode [1/2]: ", ("1", "2"), default="1") == "1":
+        taps = _ask_positive_int("How many taps? [10]: ",
+                                 default=DEFAULT_TAPS)
+        mode_label, tap_limit, endless = f"{taps} taps", taps, False
+    else:
+        mode_label, tap_limit, endless = "ENDLESS", None, True
+
+    print()
+    print("Minimum click interval:")
+    print()
+    for i, (label, _) in enumerate(INTERVAL_PRESETS, start=1):
+        print(f"{i}. {label}")
+    print()
+    choice = int(_ask_option("Select interval [1]: ",
+                             [str(i) for i in range(1, 7)], default="1"))
+    preset_value = INTERVAL_PRESETS[choice - 1][1]
+    if preset_value is None:  # Custom
+        min_interval_ms = _ask_non_negative_float(
+            "Custom interval in ms [275]: ",
+            default=DEFAULT_MIN_INTERVAL_MS)
+    else:
+        min_interval_ms = preset_value
+
+    print()
+    print("========================================")
+    print("Configuration")
+    print("========================================")
+    print()
+    print(f"Mode: {'Endless' if endless else 'Limited'}")
+    print(f"Taps: {'Endless' if endless else tap_limit}")
+    print(f"Minimum click interval: {min_interval_ms:g} ms")
+    print()
+    print("========================================")
+    print()
+    if not _ask_yes_no("Start bot? [Y/n]: ", default=True):
+        return None
+    return (mode_label, tap_limit, endless, min_interval_ms)
 
 
 # ---------------------------------------------------------------------------
@@ -366,9 +513,25 @@ def main(argv=None):
         run_calibration()
         return 0
 
-    # Validate tap-mode flags before touching config, so CLI misuse
-    # (e.g. --taps 25 --endless) fails fast with a clean error.
-    mode_label, tap_limit, endless = resolve_mode(args, parser)
+    # Gameplay configuration: explicit mode/timing flags start directly;
+    # otherwise show the interactive menu. Diagnostic commands (--test,
+    # --verify-coords) never need gameplay configuration.
+    if not (args.test or args.verify_coords):
+        if mode_flags_explicit(args):
+            # Validate tap-mode flags before touching config, so CLI misuse
+            # (e.g. --taps 25 --endless) fails fast with a clean error.
+            mode_label, tap_limit, endless = resolve_mode(args, parser)
+            min_interval_ms = effective_min_interval_ms(args)
+        else:
+            try:
+                menu = run_interactive_menu()
+            except (KeyboardInterrupt, EOFError):
+                print("\nCancelled.")
+                return 0
+            if menu is None:
+                print("Exiting without starting the bot.")
+                return 0
+            mode_label, tap_limit, endless, min_interval_ms = menu
 
     try:
         cfg = load_config()
@@ -390,7 +553,7 @@ def main(argv=None):
               "not live mode.")
         return 1
     return run_unified(cfg, tap_limit=tap_limit, endless=endless,
-                       min_interval_ms=args.min_interval, debug=args.debug,
+                       min_interval_ms=min_interval_ms, debug=args.debug,
                        perf_log_path=args.perf_log, backend=args.backend)
 
 

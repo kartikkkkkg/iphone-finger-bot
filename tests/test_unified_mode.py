@@ -149,8 +149,15 @@ class TestTapModes(unittest.TestCase):
 
 class TestMinInterval(unittest.TestCase):
     def test_default_min_interval_275(self):
+        # No flag -> sentinel None; effective default resolves to 275.
         args = bot_unified.build_parser().parse_args([])
-        self.assertEqual(args.min_interval, 275)
+        self.assertIsNone(args.min_interval)
+        self.assertEqual(bot_unified.effective_min_interval_ms(args), 275)
+        explicit = bot_unified.build_parser().parse_args(
+            ["--min-interval", "0"])
+        self.assertEqual(bot_unified.effective_min_interval_ms(explicit), 0)
+        self.assertTrue(bot_unified.mode_flags_explicit(explicit))
+        self.assertFalse(bot_unified.mode_flags_explicit(args))
 
     def test_negative_min_interval_rejected(self):
         parser = bot_unified.build_parser()

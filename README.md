@@ -237,6 +237,59 @@ python bot_unified.py --perf-log performance.log
 - `--debug`, `--test`, `--verify-coords`, `--calibrate`,
   `--list-windows`, and `--save-capture` work as in `bot.py`.
 
+### Interactive startup menu
+
+Run with no mode/timing flags and `bot_unified.py` walks you through the
+setup — mode, tap count, interval preset, and a confirmation screen:
+
+```bash
+python bot_unified.py
+```
+
+```
+========================================
+       iPhone Orange Button Bot
+========================================
+
+How do you want to run?
+
+1. Limited taps
+2. Endless mode
+
+Select mode [1/2]:
+
+How many taps? [10]:
+
+Minimum click interval:
+
+1. 275 ms (recommended)
+2. 300 ms
+3. 350 ms
+4. 500 ms
+5. Custom
+6. No timing limit
+
+Select interval [1]:
+
+========================================
+Configuration
+========================================
+
+Mode: Limited
+Taps: 10
+Minimum click interval: 275 ms
+
+========================================
+
+Start bot? [Y/n]:
+```
+
+Any explicit `--taps`, `--endless`, or `--min-interval` flag skips the
+menu entirely. Diagnostic commands (`--test`, `--verify-coords`,
+`--calibrate`, `--list-windows`) never show it. Ctrl+C at any prompt
+exits cleanly; invalid input is rejected with an error and asked again —
+nothing is ever chosen silently.
+
 ## Endless mode
 
 ```bash
