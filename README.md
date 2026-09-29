@@ -318,6 +318,37 @@ dispatch — this is not a click-to-click interval. `--debug`, `--test`,
 `--verify-coords`, `--calibrate`, `--list-windows`, and `--save-capture`
 work as in `bot.py`; diagnostic commands never start the bot.
 
+## Human Bot (endless, humanized taps)
+
+`bot_human.py` is an ENDLESS humanized tapper — same detection,
+re-arm, and capture as everything else, but each tap is shaped to look
+like a human playing through iPhone Mirroring instead of a machine:
+
+1. **Spatial jitter** — every tap lands at button center plus a fresh 2D
+   Gaussian offset (clamped well inside the button). Zero-variance
+   center-hitting is the biggest bot tell; humans scatter ~5–15 px.
+2. **Press-and-hold** — mouse down, hold a random 40–150 ms, mouse up.
+   The stock scripts post down+up back-to-back (<1 ms); iOS observes
+   touch begin/end, so a real press duration is visible.
+3. **Human reaction delays** — the post-detection wait is drawn from a
+   right-skewed distribution (normal + exponential tail) with a human
+   floor, not a flat uniform band. Fresh sample per tap.
+4. **Occasional slow taps** — small per-tap chance of an extra
+   "distraction" pause, like a human blinking.
+
+```bash
+python bot_human.py
+```
+
+The startup menu offers three profiles — **Natural** (recommended,
+most human-like), **Brisk**, **Aggressive** (near the human limit) — or
+**Custom** (reaction mean/std-dev/floor, jitter sigma, hold range,
+slow-tap probability). More human = slower = worse at "fastest
+fingers"; the profiles let you choose the tradeoff. The final report
+adds average reaction delay, min/max, average press-and-hold, average
+tap offset from center, and slow-tap count. No technique can guarantee
+passing an unknown server-side check.
+
 ## Endless mode
 
 ```bash
