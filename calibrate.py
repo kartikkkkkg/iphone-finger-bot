@@ -94,13 +94,14 @@ def run_calibration():
         print(f"  button {i}: mouse=({mx:.1f}, {my:.1f}) pt -> "
               f"capture=({px:.1f}, {py:.1f}) px")
 
-    # 4. ROI size. Suggest a size scaled from the reference measurement:
-    # on a 1206px-wide (3x) capture, roi=280 cleanly frames one button.
-    suggested_roi = int(round(280 * frame.shape[1] / 1206))
-    suggested_roi = max(64, min(512, suggested_roi))
-    roi = input(f"\nROI square size in capture pixels [{suggested_roi}]: "
-                ).strip()
-    cfg["roi_size"] = int(roi) if roi else suggested_roi
+    # 4. ROI size. Default 105 capture px: at typical iPhone Mirroring
+    # scales this frames one button with a modest margin and keeps the six
+    # ROIs disjoint. The scale-derived estimate is shown for reference only.
+    scale_estimate = int(round(280 * frame.shape[1] / 1206))
+    print(f"\nScale-derived estimate for reference: ~{scale_estimate} px "
+          f"(from the 280 px @ 1206 px reference).")
+    roi = input("ROI square size in capture pixels [105]: ").strip()
+    cfg["roi_size"] = int(roi) if roi else 105
 
     # 5. Live sanity check.
     print("\n--- Detection sanity check ---")

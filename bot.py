@@ -191,18 +191,17 @@ def run_live(cfg, debug=False, perf_log_path=None, backend="quartz",
 def _draw_debug(frame, cfg, scores, target, tap_count, detect_ms):
     import cv2
     roi = cfg["roi_size"]
-    half = roi // 2
     for i in range(1, 7):
-        b = cfg["buttons"][str(i)]
-        cx, cy = int(b["x"]), int(b["y"])
+        # The rectangle drawn here IS the ROI extract_rois() slices:
+        # roi_bounds() shares the exact centering convention.
+        x0, y0, x1, y1 = detector.roi_bounds(cfg["buttons"], roi, i)
         color = (0, 165, 255) if target == i else (255, 255, 255)
         thick = 3 if target == i else 1
-        cv2.rectangle(frame, (cx - half, cy - half), (cx + half, cy + half),
-                      color, thick)
+        cv2.rectangle(frame, (x0, y0), (x1 - 1, y1 - 1), color, thick)
         label = f"{i}" + (" TARGET" if target == i else "")
-        cv2.putText(frame, label, (cx - half, cy - half - 8),
+        cv2.putText(frame, label, (x0, y0 - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-        cv2.putText(frame, f"{scores[i - 1]:.2f}", (cx - half, cy + half + 20),
+        cv2.putText(frame, f"{scores[i - 1]:.2f}", (x0, y1 + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
     cv2.putText(frame, f"Tap {tap_count}/{TOTAL_TAPS}  detect {detect_ms:.2f} ms",
                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)

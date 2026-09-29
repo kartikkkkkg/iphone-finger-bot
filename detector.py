@@ -25,6 +25,38 @@ import numpy as np
 NUM_BUTTONS = 6
 
 
+def roi_bounds(buttons, roi_size, index):
+    """Exact pixel bounds of ROI `index` (1-based), exclusive upper edges.
+
+    Returns (x0, y0, x1, y1) with the same centering convention used by
+    extract_rois: the ROI is roi_size wide, centered on the calibrated
+    button center (integer rounding identical in both places). Bounds may
+    extend past the frame edges; extract_rois clamps them when slicing.
+    """
+    half = roi_size // 2
+    cx = int(round(buttons[str(index)]["x"]))
+    cy = int(round(buttons[str(index)]["y"]))
+    x0, y0 = cx - half, cy - half
+    return x0, y0, x0 + roi_size, y0 + roi_size
+
+
+def find_overlapping_rois(buttons, roi_size):
+    """Return [(i, j), ...] of 1-based ROI pairs whose rectangles overlap.
+
+    Empty list means the six ROIs are pairwise disjoint (touching edges
+    do not count as overlap).
+    """
+    rects = [roi_bounds(buttons, roi_size, i) for i in range(1, NUM_BUTTONS + 1)]
+    pairs = []
+    for a in range(NUM_BUTTONS):
+        ax0, ay0, ax1, ay1 = rects[a]
+        for b in range(a + 1, NUM_BUTTONS):
+            bx0, by0, bx1, by1 = rects[b]
+            if ax0 < bx1 and bx0 < ax1 and ay0 < by1 and by0 < ay1:
+                pairs.append((a + 1, b + 1))
+    return pairs
+
+
 def extract_rois(frame, buttons, roi_size):
     """Slice the 6 button ROIs out of a game-region frame.
 
@@ -37,13 +69,9 @@ def extract_rois(frame, buttons, roi_size):
     short edges are zero-padded (black never matches the orange mask).
     """
     h, w = frame.shape[:2]
-    half = roi_size // 2
     rois = np.zeros((NUM_BUTTONS, roi_size, roi_size, 3), dtype=np.uint8)
     for i in range(1, NUM_BUTTONS + 1):
-        cx = int(round(buttons[str(i)]["x"]))
-        cy = int(round(buttons[str(i)]["y"]))
-        x0, y0 = cx - half, cy - half
-        x1, y1 = x0 + roi_size, y0 + roi_size
+        x0, y0, x1, y1 = roi_bounds(buttons, roi_size, i)
         # Source window clamped to the frame.
         sx0, sy0 = max(x0, 0), max(y0, 0)
         sx1, sy1 = min(x1, w), min(y1, h)

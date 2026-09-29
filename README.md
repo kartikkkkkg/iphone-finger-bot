@@ -85,7 +85,8 @@ The wizard:
 1. Finds the iPhone Mirroring window → sets the game region (full window by default).
 2. Measures the Retina backing scale from a live capture.
 3. For each button 1–6: hover the mouse over the button center, press ENTER.
-4. Suggests an ROI size scaled from a validated reference measurement.
+4. Prompts for the ROI size (default 105 capture px: frames one button with
+   a modest margin while keeping the six ROIs disjoint).
 5. Runs a live detection sanity check and saves `config.json`.
 
 Verify click coordinates without clicking anything:
@@ -178,8 +179,9 @@ python bot.py --debug
 
 `detector.py`: one `cvtColor` + one `inRange` over a single stacked
 `(6, H, W, 3)` array of the six ROIs (no per-ROI conversions, no Python
-pixel loops), then six `countNonZero`s. Measured ~2 ms on 280 px ROIs.
-Smaller ROIs and a tighter game region make it faster; the HSV thresholds
+pixel loops), then six `countNonZero`s. Measured ~2 ms on 105 px ROIs
+(the default; smaller than the earlier 280 px reference ROIs, so the
+current build is faster).
 (`orange_hsv` in `config.json`) do not affect speed.
 
 ### What controls click speed
@@ -237,6 +239,7 @@ Run the tests:
 | Capture returns black / None | Grant Screen Recording permission, restart Terminal |
 | Clicks do nothing | Grant Accessibility permission, restart Terminal |
 | Clicks land off-button | Re-run `--calibrate`; check `--verify-coords` |
+| ROI boxes overlap / "ROI rectangles overlap" error | Reduce `roi_size` in `config.json` (default 105). No re-calibration needed — centers are stored separately |
 | Wrong button detected | Tighten `orange_hsv` in `config.json`; check `--test` |
 | Window moved since calibration | Handled automatically; re-calibrate only after resize |
 | Bot never taps | Game may not have started — it waits for orange; check `--test` |

@@ -26,7 +26,7 @@ DEFAULT_CONFIG = {
     "game_region": {"x": 0, "y": 0, "width": 0, "height": 0},
     "window_bounds_at_calibration": {"x": 0, "y": 0, "width": 0, "height": 0},
     "buttons": {str(i): {"x": 0, "y": 0} for i in range(1, 7)},
-    "roi_size": 120,
+    "roi_size": 105,
     "orange_hsv": {"h_min": 10, "h_max": 24, "s_min": 90, "v_min": 90},
     "min_score": 0.22,
     "ambiguity_margin": 0.08,
@@ -63,7 +63,7 @@ def validate_config(cfg):
             raise ConfigError(f"buttons.{i} looks out of range: ({bx}, {by})")
         # ROI must fit inside the game region at 1x scale; at higher Retina
         # scales the capture is bigger, so this is the conservative check.
-        roi = cfg.get("roi_size", 120)
+        roi = cfg.get("roi_size", 105)
         half = roi / 2.0
         if not (bx - half >= -1 and by - half >= -1):
             raise ConfigError(f"buttons.{i} ROI would extend outside the game region")
@@ -71,6 +71,17 @@ def validate_config(cfg):
     roi_size = _require(cfg, "roi_size", "config")
     if not (16 <= roi_size <= 512):
         raise ConfigError("roi_size must be between 16 and 512")
+
+    # The six ROIs must be pairwise disjoint: overlapping ROIs would let one
+    # button's pixels influence a neighbor's score.
+    from detector import find_overlapping_rois  # lazy: keeps config cv2-free
+    overlaps = find_overlapping_rois(cfg["buttons"], roi_size)
+    if overlaps:
+        detail = ", ".join(f"ROI {a}/ROI {b}" for a, b in overlaps)
+        raise ConfigError(
+            f"ROI rectangles overlap: {detail}. "
+            f"Reduce 'roi_size' (currently {roi_size}) in config.json or "
+            f"re-run 'python bot.py --calibrate'.")
 
     hsv = _require(cfg, "orange_hsv", "config")
     for k in ("h_min", "h_max", "s_min", "v_min"):
