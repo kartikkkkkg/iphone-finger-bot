@@ -99,6 +99,74 @@ def request_screen_recording_permission():
 
 
 # ---------------------------------------------------------------------------
+# Pixel-buffer decoding (pure function: unit-testable on any OS)
+# ---------------------------------------------------------------------------
+
+def decode_frame_buffer(buf, width, height, row_bytes, bytes_per_pixel, order):
+    """Convert a raw image byte buffer to a contiguous BGR uint8 frame.
+
+    buf:             bytes-like of length >= row_bytes * height.
+    width/height:    image dimensions in pixels.
+    row_bytes:       ACTUAL bytes per row (stride). May exceed
+                     width * bytes_per_pixel due to row padding — this is
+                     the value CoreGraphics reports, never assumed.
+    bytes_per_pixel: 3 or 4.
+    order:           'bgra' | 'rgba' | 'argb' | 'bgr' | 'rgb'.
+
+    Returns (height, width, 3) contiguous BGR uint8 for OpenCV.
+    """
+    raw = np.frombuffer(buf, dtype=np.uint8, count=row_bytes * height)
+    rows = raw.reshape(height, row_bytes)          # strided view, no copy
+    px = rows[:, :width * bytes_per_pixel].reshape(
+        height, width, bytes_per_pixel)            # strip row padding
+    if order == "bgra":
+        bgr = px[:, :, :3]
+    elif order == "rgba":
+        bgr = px[:, :, [2, 1, 0]]
+    elif order == "argb":
+        bgr = px[:, :, [3, 2, 1]]
+    elif order == "bgr":
+        bgr = px
+    elif order == "rgb":
+        bgr = px[:, :, ::-1]
+    else:
+        raise ValueError(f"unknown pixel order: {order!r}")
+    return np.ascontiguousarray(bgr)               # single required copy
+
+
+def pixel_order_from_bitmap_info(bitmap_info, bytes_per_pixel):
+    """Map a CGImage bitmapInfo value to a decode_frame_buffer order string.
+
+    NOTE: kCGBitmapByteOrderDefault is treated as little-endian (correct for
+    Intel/Apple Silicon Macs, which is every Mac this bot can run on). The
+    one-time capture diagnostics print the raw bitmapInfo hex so a wrong
+    assumption here is immediately visible.
+    """
+    if bytes_per_pixel == 3:
+        return "bgr"  # 24-bit window captures are byte-order BGR in practice
+    if bytes_per_pixel != 4:
+        raise ValueError(f"unsupported bytes_per_pixel={bytes_per_pixel}")
+    # Imported lazily so this stays importable off macOS for tests.
+    try:
+        from Quartz import (kCGBitmapAlphaInfoMask, kCGImageAlphaFirst,
+                            kCGImageAlphaPremultipliedFirst,
+                            kCGImageAlphaNoneSkipFirst, kCGBitmapByteOrderMask,
+                            kCGBitmapByteOrder32Big)
+        alpha = bitmap_info & kCGBitmapAlphaInfoMask
+        order32 = bitmap_info & kCGBitmapByteOrderMask
+        big = (order32 == kCGBitmapByteOrder32Big)
+        alpha_first = alpha in (kCGImageAlphaFirst,
+                                kCGImageAlphaPremultipliedFirst,
+                                kCGImageAlphaNoneSkipFirst)
+    except Exception:
+        # Non-macOS (tests): assume the common BGRA layout.
+        return "bgra"
+    if big:
+        return "argb" if alpha_first else "rgba"
+    return "bgra" if alpha_first else "rgba"
+
+
+# ---------------------------------------------------------------------------
 # Backends
 # ---------------------------------------------------------------------------
 
@@ -116,30 +184,58 @@ class QuartzWindowCapture:
                 "Could not find the iPhone Mirroring window.\n"
                 "Make sure iPhone Mirroring is open and the iPhone is connected.")
         self._scale = None  # measured lazily from the first frame
+        self._format_logged = False
 
     # -- low-level ---------------------------------------------------------
     def _capture_window_pixels(self):
         from Quartz import (CGWindowListCreateImage, CGRectNull,
                             kCGWindowListOptionIncludingWindow,
                             kCGWindowImageDefault, CGImageGetWidth,
-                            CGImageGetHeight, CGImageGetDataProvider,
+                            CGImageGetHeight, CGImageGetBytesPerRow,
+                            CGImageGetBitsPerPixel, CGImageGetBitsPerComponent,
+                            CGImageGetBitmapInfo, CGImageGetDataProvider,
                             CGDataProviderCopyData)
         cgimg = CGWindowListCreateImage(
             CGRectNull, kCGWindowListOptionIncludingWindow,
             self.window["id"], kCGWindowImageDefault)
         if cgimg is None:
             return None
-        w = CGImageGetWidth(cgimg)
-        h = CGImageGetHeight(cgimg)
+
+        # NEVER assume bytes_per_row == width * 4. Read everything from the
+        # CGImage itself.
+        width = CGImageGetWidth(cgimg)
+        height = CGImageGetHeight(cgimg)
+        row_bytes = CGImageGetBytesPerRow(cgimg)
+        bits_per_pixel = CGImageGetBitsPerPixel(cgimg)
+        bits_per_component = CGImageGetBitsPerComponent(cgimg)
+        bitmap_info = CGImageGetBitmapInfo(cgimg)
+        bytes_per_pixel = bits_per_pixel // 8
+
         data = CGDataProviderCopyData(CGImageGetDataProvider(cgimg))
-        # CGWindowListCreateImage yields 32-bit BGRA (premultiplied-first,
-        # little-endian) -> bytes are B,G,R,A. Take BGR for OpenCV.
-        buf = np.frombuffer(data, dtype=np.uint8)
-        expected = w * h * 4
-        if buf.size < expected:
+        if data is None or len(data) < row_bytes * height:
             return None
-        bgra = buf[:expected].reshape(h, w, 4)
-        return bgra[:, :, :3].copy()  # BGR, contiguous
+
+        order = pixel_order_from_bitmap_info(bitmap_info, bytes_per_pixel)
+        frame = decode_frame_buffer(bytes(data), width, height, row_bytes,
+                                    bytes_per_pixel, order)
+
+        if not self._format_logged:
+            self._format_logged = True
+            print("Capture:")
+            print(f"  width = {width}")
+            print(f"  height = {height}")
+            print(f"  bytes_per_row = {row_bytes}")
+            print(f"  bytes_per_pixel = {bytes_per_pixel}")
+            print(f"  bits_per_component = {bits_per_component}")
+            print(f"  bitmap_info = 0x{bitmap_info:08x}")
+            print(f"  pixel_order = {order}")
+            print(f"  numpy_shape = {frame.shape}")
+            print(f"  dtype = {frame.dtype}")
+            print(f"  contiguous = {frame.flags['C_CONTIGUOUS']}")
+            if row_bytes != width * bytes_per_pixel:
+                print(f"  note: row stride has {row_bytes - width * bytes_per_pixel} "
+                      f"padding bytes per row (handled, not assumed away)")
+        return frame
 
     # -- public ------------------------------------------------------------
     @property
@@ -197,13 +293,12 @@ class MSSCapture:
         return shot.shape[1] / gr["width"] if gr["width"] else 2.0
 
     def _grab(self, rect_points):
-        import cv2
         mon = {"left": int(rect_points["x"]), "top": int(rect_points["y"]),
                "width": int(rect_points["width"]),
                "height": int(rect_points["height"])}
         shot = self._mss.grab(mon)
-        frame = np.asarray(shot)[:, :, :3]  # BGRA -> BGR
-        return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        # mss raw bytes are BGRA; dropping alpha already yields BGR.
+        return np.ascontiguousarray(np.asarray(shot)[:, :, :3])
 
     def capture_frame(self):
         win = find_iphone_mirroring_window()

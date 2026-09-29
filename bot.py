@@ -276,6 +276,11 @@ def main(argv=None):
                     help="move cursor over each button (no clicks)")
     ap.add_argument("--list-windows", action="store_true",
                     help="list candidate iPhone Mirroring windows")
+    ap.add_argument("--save-capture", metavar="PATH", nargs="?",
+                    const="debug_capture.png", default=None,
+                    help="capture one game-region frame and save it as PNG "
+                         "(default: debug_capture.png); verify it visually "
+                         "before any click testing")
     ap.add_argument("--perf-log", metavar="PATH", default=None,
                     help="write performance.log after the game")
     ap.add_argument("--backend", default="quartz",
@@ -287,6 +292,26 @@ def main(argv=None):
         import capture
         win = capture.find_iphone_mirroring_window(verbose=True)
         print("selected:", win)
+        return 0
+
+    if args.save_capture:
+        import capture
+        import cv2
+        try:
+            cfg0 = load_config()
+        except ConfigError as e:
+            print(f"ERROR: {e}")
+            return 1
+        cap = capture.make_capture(cfg0, backend=args.backend)
+        frame = cap.capture_game_region()
+        if frame is None:
+            print("ERROR: capture returned no image.")
+            return 1
+        cv2.imwrite(args.save_capture, frame)
+        print(f"Saved {frame.shape[1]}x{frame.shape[0]} frame -> "
+              f"{args.save_capture}")
+        print("Open it and confirm it matches the iPhone Mirroring window "
+              "before any click testing.")
         return 0
 
     if args.calibrate:
